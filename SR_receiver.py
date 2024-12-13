@@ -6,11 +6,11 @@ import threading
 from time import sleep, time
 
 print(
-    "Usage: python receiver.py <bind_port> <window_size_N> <packet_loss_probability_p> <max_packet_delay_Dmax>"
+    "Usage: python SR_receiver.py <bind_port> <window_size_N> <packet_loss_probability_p> <max_packet_delay_Dmax>"
 )
 
 # Constants
-PACKET_SIZE = 1024
+PACKET_SIZE = 10240  # NOTE CHANGE THIS TO 1024
 HEADER_SIZE = 2
 IP = "127.0.0.1"
 FILENAME = "received.png"
@@ -68,7 +68,7 @@ while True:
     data_bytes = packet[HEADER_SIZE:PACKET_SIZE]
 
     # Uncomment this to print the received packet no and data size (before applying drop)
-    # print(packet_no, len(data_bytes))
+    print(packet_no - 1, len(data_bytes))
 
     # Terminate program if packet_no is 0
     if packet_no == 0:

@@ -22,69 +22,74 @@ Although there are lots of ways, design patterns and primitives to implement con
 Here, we outline a sample design pattern that you can use in your programs. According to this design, N (Selective Repeat window size) separate threads are initialized in the main thread for each data segment to be sent. A draft for the run() methods of these threads are provided below:
 public void run() {
 try {
-		while(true) {
-			// Send packet
-			socket.send(packet);
-					
-			// Wait for main thread notification or timeout
-			Thread.sleep(timeout);
-		}
-	} 
-			
-	// Stop if main thread interrupts this thread
-	catch (InterruptedException e) {
-		return;
+        while(true) {
+            // Send packet
+            socket.send(packet);
+                    
+            // Wait for main thread notification or timeout
+            Thread.sleep(timeout);
+        }
+    } 
+            
+    // Stop if main thread interrupts this thread
+    catch (InterruptedException e) {
+        return;
 }
 }
 A thread with a run() method like this will first send its “packet” through the DatagramSocket “socket”, then wait for “timeout” milliseconds until retransmission. This happens in an infinite loop, which will only be broken by an external intervention from the main thread. In this design pattern, the main thread calls Thread.interrupt() method of the corresponding thread when it receives the ACK for the packet of that thread. A rough pseudocode for the main thread according to this design can be as follows:
 loop until all packets are sent and all acks received {
-	for segment_no from nextseqnum to send_base + N – 1 {
+    for segment_no from nextseqnum to send_base + N – 1 {
 start sender thread for segment_no;
-	}
+    }
 
 ACK = receive_ACK(socket);
 
 if ACK in [send_base, send_base + N - 1] {
-	if thread with segment_no == ACK is still running {
-		thread.interrupt();
-		advance send_base;
-	}
+    if thread with segment_no == ACK is still running {
+        thread.interrupt();
+        advance send_base;
+    }
 }
 }
 
 Please note that these pseudocodes and this design pattern are just examples to give you some idea about how the concurrency requirement of the assignment can be fulfilled. You are free to implement the program in any way you want as long as you achieve concurrency. That is, you can use more advanced concurrent design patterns, techniques, primitives, etc. Also, keep in mind that even if you decide to use the pseudocodes we provide, you might still need to make changes to them since they are oversimplified drafts and do not fully cover the requirements of the assignment.
 Report
 You will transfer the image.png file given to you with this assignment and measure the Average Throughput for this file transfer under different settings as listed below. In your report, you need to provide the following plots and include a discussion about how your results relate with what you have learned in class:
-	Average Throughput (in bps) vs. loss rate (p) for p ∈ {0, 0.1, 0.2, 0.3, 0.4, 0.5}. Use Dmax = 150 ms, timeout = 180 ms, N = 30.
-	Average Throughput (in bps) vs. window size (N) for N ∈ {10, 30, 50, 70, 90}. Use Dmax = 150 ms, timeout = 180 ms, p = 0.1.
-	Average Throughput (in bps) vs timeout for timeout ∈ {60, 100, 140, 180, 220}. Use Dmax = 150 ms, p = 0.1, N = 30.
+    Average Throughput (in bps) vs. loss rate (p) for p ∈ {0, 0.1, 0.2, 0.3, 0.4, 0.5}. Use Dmax = 150 ms, timeout = 180 ms, N = 30.
+    Average Throughput (in bps) vs. window size (N) for N ∈ {10, 30, 50, 70, 90}. Use Dmax = 150 ms, timeout = 180 ms, p = 0.1.
+    Average Throughput (in bps) vs timeout for timeout ∈ {60, 100, 140, 180, 220}. Use Dmax = 150 ms, p = 0.1, N = 30.
 Final Remarks
-	For UDP communication, you should use socket.SOCK_DGRAM in Python.
-	You should run the receiver program first, then run your sender program.
-	DO NOT print anything to the screen until the file transmission is complete in the final version of your code, since this might seriously affect the performance.
-	Sending an image is not different than sending a txt file, or any other file. Therefore, your code should be working with ANY kind of input file, without paying attention to its content. It should treat the input as a series of bytes. The reason you are given an image is to make it easier to compare the received file and the input visually. For Python, do not use any image reader libraries, like PIL. The standard ‘open’ function can handle the bytes if you supply correct parameters. 
-	Note that we will be testing your code with different files. Therefore, you might want to check your program with different input files before you submit. You can uncomment line 64 of the receiver.py to investigate what the receiver has received. 
-	You can modify the source code of the receiver for experimental purposes. However, do not forget that your projects will be evaluated based on the version we provide.
-	You might receive some socket exceptions if your program fails to close sockets from its previous instance. In that case, you can manually shut down those ports by waiting them to timeout, restarting the machine, etc.
-	No third-party packages/sources are allowed.
+    For UDP communication, you should use socket.SOCK_DGRAM in Python.
+    You should run the receiver program first, then run your sender program.
+    DO NOT print anything to the screen until the file transmission is complete in the final version of your code, since this might seriously affect the performance.
+    Sending an image is not different than sending a txt file, or any other file. Therefore, your code should be working with ANY kind of input file, without paying attention to its content. It should treat the input as a series of bytes. The reason you are given an image is to make it easier to compare the received file and the input visually. For Python, do not use any image reader libraries, like PIL. The standard ‘open’ function can handle the bytes if you supply correct parameters. 
+    Note that we will be testing your code with different files. Therefore, you might want to check your program with different input files before you submit. You can uncomment line 64 of the receiver.py to investigate what the receiver has received. 
+    You can modify the source code of the receiver for experimental purposes. However, do not forget that your projects will be evaluated based on the version we provide.
+    You might receive some socket exceptions if your program fails to close sockets from its previous instance. In that case, you can manually shut down those ports by waiting them to timeout, restarting the machine, etc.
+    No third-party packages/sources are allowed.
 """
 
-import sys
-import socket
-import threading
+import queue
 import random
+import socket
+import sys
+import threading
 from time import sleep, time
 
 # Constants
-PACKET_SIZE = 1024
+PACKET_SIZE = 10240  # NOTE CHANGE THIS TO 1024
 HEADER_SIZE = 2
+DATA_SIZE = PACKET_SIZE - HEADER_SIZE
 IP = "127.0.0.1"
 
 # Cmd args
-FILE_PATH = sys.argv[1]
-RECEIVER_PORT = int(sys.argv[2])
-N = int(sys.argv[3])
-TIMEOUT = int(sys.argv[4])  # in ms
+FILE_PATH = "image.png"  # sys.argv[1]
+RECEIVER_PORT = 8080  # int(sys.argv[2])
+N = 30  # int(sys.argv[3])
+TIMEOUT = 180  # int(sys.argv[4])  # in ms
+
+# Start time
+start_time = time()
 
 # Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -93,10 +98,89 @@ sock.connect((IP, RECEIVER_PORT))
 # Read file
 with open(FILE_PATH, "rb") as f:
     data = f.read()
-    
-# Divide file into segments
-segments = [data[i : i + PACKET_SIZE - HEADER_SIZE] for i in range(0, len(data), PACKET_SIZE - HEADER_SIZE)]
 
-# Selective Repeat
-send_base = 1
-nextseqnum = 1
+# Divide file into segments
+segments = [data[i : i + DATA_SIZE] for i in range(0, len(data), DATA_SIZE)]
+
+# Define variables
+send_base = 0  # Send base
+nextseqnum = 0  # Next sequence number
+ack = -1  # Last ack received
+# Thread dictionary {segment_no:thread}
+threads = {}
+# Acknowledgements received set
+acks_received = set()
+
+
+# Send segment function
+def send_segment(i):
+    sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
+
+    # Start timer
+    threads[i].timer = time()
+
+    # Wait for ack
+    while True:
+        # Check if ack is received
+        if i in acks_received:
+            break
+
+        # Check if timeout
+        if time() - threads[i].timer > TIMEOUT / 1000:
+            print(f"Timeout for segment {i}")
+
+            # Resend segment
+            sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
+            print(f"Resending segment {i}")
+
+            # Restart timer
+            threads[i].timer = time()
+
+        # Sleep
+        sleep(0.01)
+
+
+# Main selective repeat loop
+while True:
+    # Send packet
+    if nextseqnum < send_base + N and nextseqnum < len(segments):
+        # Create thread
+        threads[nextseqnum] = threading.Thread(target=send_segment, args=(nextseqnum,))
+        threads[nextseqnum].start()
+        print(f"Sending segment {nextseqnum}")
+
+        # Increment nextseqnum
+        nextseqnum += 1
+
+    # Receive ack
+    try:
+        ack = int.from_bytes(sock.recv(HEADER_SIZE), byteorder="big")
+        ack = ack - 1  # 1-indexed
+        # Print ack
+        print(f"Acknowledgement {ack}")
+    except:
+        continue
+
+    # Update send_base
+    if ack in range(send_base, send_base + N):
+        # Update acks_received
+        acks_received.add(ack)
+        # Update send_base
+        while send_base in acks_received:
+            send_base += 1
+
+    # Check if all segments are sent and all acks are received
+    if send_base == len(segments) and len(acks_received) == len(segments):
+        break
+
+# Send termination signal
+sock.send((0).to_bytes(HEADER_SIZE, byteorder="big"))
+
+# Close socket
+sock.close()
+
+# End time
+end_time = time()
+
+# Print time
+print(f"Time: {end_time - start_time} seconds")
