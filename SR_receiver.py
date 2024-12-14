@@ -10,7 +10,7 @@ print(
 )
 
 # Constants
-PACKET_SIZE = 10240  # NOTE CHANGE THIS TO 1024
+PACKET_SIZE = 1024
 HEADER_SIZE = 2
 IP = "127.0.0.1"
 FILENAME = "received.png"
@@ -44,6 +44,7 @@ PORT = int(sys.argv[1])
 N = int(sys.argv[2])
 LOSS_PROB = float(sys.argv[3])
 DELAY = int(sys.argv[4])  # in ms
+VERBOSE = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 
 # Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -68,7 +69,8 @@ while True:
     data_bytes = packet[HEADER_SIZE:PACKET_SIZE]
 
     # Uncomment this to print the received packet no and data size (before applying drop)
-    print(packet_no - 1, len(data_bytes))
+    if VERBOSE:
+        print(packet_no - 1, len(data_bytes))
 
     # Terminate program if packet_no is 0
     if packet_no == 0:
