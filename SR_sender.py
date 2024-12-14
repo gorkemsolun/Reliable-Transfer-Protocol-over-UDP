@@ -13,6 +13,8 @@ HEADER_SIZE = 2
 DATA_SIZE = PACKET_SIZE - HEADER_SIZE
 IP = "127.0.0.1"
 
+print("Usage: python SR_sender.py <file_path> <receiver_port> <N> <timeout>")
+
 # Cmd args
 FILE_PATH = sys.argv[1]
 RECEIVER_PORT = int(sys.argv[2])
