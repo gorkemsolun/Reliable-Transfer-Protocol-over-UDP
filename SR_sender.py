@@ -1,19 +1,19 @@
 # Görkem Kadir Solun 22003214
 
-import queue
-import random
 import socket
 import sys
 import threading
-from time import sleep, time
+from time import time
 
 # Constants
-PACKET_SIZE = 1024
-HEADER_SIZE = 2
+PACKET_SIZE = 1024  # 1 KB
+HEADER_SIZE = 2  # 2 bytes
 DATA_SIZE = PACKET_SIZE - HEADER_SIZE
 IP = "127.0.0.1"
 
 print("Usage: python SR_sender.py <file_path> <receiver_port> <N> <timeout>")
+print("PLEASE CORRECT THE RECEIVED FILE TYPE IF IT IS NOT A PNG")
+print("Program is running...")
 
 # Cmd args
 FILE_PATH = sys.argv[1]
@@ -39,15 +39,18 @@ segments = [data[i : i + DATA_SIZE] for i in range(0, len(data), DATA_SIZE)]
 # Define variables
 send_base = 0  # Send base
 nextseqnum = 0  # Next sequence number
+kill = False  # Kill flag
 ack = -1  # Last ack received
 # Thread dictionary {segment_no:thread}
-threads = {}
+threads = {}  # Thread dictionary {segment_no:thread}
+threads_events = {}  # Thread event dictionary {segment_no:event}
 # Acknowledgements received set
 acks_received = set()
 
 
 # Send segment function
 def send_segment(i):
+    # Send segment i to receiver with header i + 1 (1-indexed) in big endian
     sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
 
     # Start timer
@@ -55,31 +58,37 @@ def send_segment(i):
 
     # Wait for ack
     while True:
-        # Check if ack is received
-        if i in acks_received:
-            break
-
-        # Check if timeout
+        # Check if timeout is reached for segment i (in ms)
         if time() - threads[i].timer > TIMEOUT / 1000:
+            if threads_events[i].is_set():
+                # Ack received for segment i
+                # Make the thread kill itself
+                kill = True
+                return
+
             if VERBOSE:
                 print(f"Timeout for segment {i}, resending segment {i}")
+
             # Resend segment
             sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
 
             # Restart timer
             threads[i].timer = time()
 
-        # Sleep
-        sleep(0.01)
-
 
 # Main selective repeat loop
-while True:
+while True and not kill:
     # Send packet
     if nextseqnum < send_base + N and nextseqnum < len(segments):
         # Create thread
         threads[nextseqnum] = threading.Thread(target=send_segment, args=(nextseqnum,))
+
+        # Create event
+        threads_events[nextseqnum] = threading.Event()
+
+        # Start thread
         threads[nextseqnum].start()
+
         if VERBOSE:
             print(f"Sending segment {nextseqnum}")
 
@@ -92,16 +101,22 @@ while True:
         ack = ack - 1  # 1-indexed
         if VERBOSE:
             print(f"Acknowledgement {ack}")
-    except:
-        continue
 
-    # Update send_base
-    if ack in range(send_base, send_base + N):
-        # Update acks_received
-        acks_received.add(ack)
         # Update send_base
-        while send_base in acks_received:
-            send_base += 1
+        if ack in range(send_base, send_base + N) and ack not in acks_received:
+            # Update acks_received
+            acks_received.add(ack)
+
+            # Set event for segment ack
+            threads_events[ack].set()
+
+            threads[ack].join()
+
+            # Update send_base
+            while send_base in acks_received:
+                send_base += 1
+    except:
+        pass
 
     # Check if all segments are sent and all acks are received
     if send_base == len(segments) and len(acks_received) == len(segments):

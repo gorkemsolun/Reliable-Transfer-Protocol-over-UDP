@@ -8,10 +8,12 @@ from time import sleep, time
 print(
     "Usage: python SR_receiver.py <bind_port> <window_size_N> <packet_loss_probability_p> <max_packet_delay_Dmax>"
 )
+print("PLEASE CORRECT THE RECEIVED FILE TYPE IF IT IS NOT A PNG")
+print("Program is running...")
 
 # Constants
-PACKET_SIZE = 1024
-HEADER_SIZE = 2
+PACKET_SIZE = 1024  # 1 KB
+HEADER_SIZE = 2  # 2 bytes
 IP = "127.0.0.1"
 FILENAME = "received.png"
 
@@ -35,6 +37,8 @@ class DelayedACKThread(threading.Thread):
 
         try:
             send_ACK(self.sock, self.addr, self.packet_no)
+            if VERBOSE:
+                print("ACK", self.packet_no - 1)
         except OSError:
             pass
 
