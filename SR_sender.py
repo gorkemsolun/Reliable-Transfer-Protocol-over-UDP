@@ -25,10 +25,6 @@ VERBOSE = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 # Start time
 start_time = time.time()
 
-# Socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.connect((IP, RECEIVER_PORT))
-
 # Read file
 with open(FILE_PATH, "rb") as f:
     data = f.read()
@@ -36,92 +32,105 @@ with open(FILE_PATH, "rb") as f:
 # Divide file into segments
 segments = [data[i : i + DATA_SIZE] for i in range(0, len(data), DATA_SIZE)]
 
-# Define variables
-send_base = 0  # Send base
-nextseqnum = 0  # Next sequence number
-ack = -1  # Last ack received
-# Thread dictionary {segment_no:thread}
-threads = {}  # Thread dictionary {segment_no:thread}
-threads_events = {}  # Thread event dictionary {segment_no:event}
-# Acknowledgements received set
-acks_received = set()
+
+class SR_Sender:
+    def __init__(self):
+        self.send_base = 0
+        self.next_seq_num = 0
+        self.acks_received = set()
+        self.lock = threading.Lock()
+        # Socket
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.connect((IP, RECEIVER_PORT))
+
+    # Send segment function
+    def send_segment(self, i):
+        # Send segment i to receiver with header i + 1 (1-indexed) in big endian
+        self.sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
+
+        # Wait for ack
+        while i not in self.acks_received:
+            time.sleep(TIMEOUT / 1000)
+            with self.lock:
+                if VERBOSE:
+                    print(f"Timeout for segment {i}, resending segment")
+
+                # Resend segment
+                self.sock.send(
+                    (i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i]
+                )
+
+    # Receive ack function
+    def receive_ack(self):
+        while True:
+            try:
+                last_ack = int.from_bytes(self.sock.recv(HEADER_SIZE), byteorder="big")
+                last_ack = last_ack - 1  # 1-indexed
+                if VERBOSE:
+                    print(f"Acknowledgement {last_ack}")
+
+                # Update send_base
+                with self.lock:
+                    if (
+                        last_ack in range(self.send_base, self.send_base + N)
+                        and last_ack not in self.acks_received
+                    ):
+                        # Update acks_received
+                        self.acks_received.add(last_ack)
+
+                        # Update send_base
+                        while self.send_base in self.acks_received:
+                            self.send_base += 1
+            except:
+                pass
+
+    def main(self):
+        # Start receive ack thread
+        ack_thread = threading.Thread(target=self.receive_ack, daemon=True)
+        ack_thread.start()
+
+        # Main selective repeat loop
+        while True:
+            # Send packet
+            with self.lock:
+                # Check if nextseqnum is within window and not exceeding segments
+                if self.next_seq_num < self.send_base + N and self.next_seq_num < len(
+                    segments
+                ):
+                    # Create thread
+                    send_thread = threading.Thread(
+                        target=self.send_segment, args=(self.next_seq_num,), daemon=True
+                    )
+
+                    # Start thread
+                    send_thread.start()
+
+                    if VERBOSE:
+                        print(f"Sending segment {self.next_seq_num}")
+
+                    # Increment nextseqnum
+                    self.next_seq_num += 1
+
+                # Check if all segments are sent and all acks are received
+                if len(self.acks_received) == len(segments):
+                    break
+
+        # Send termination signal
+        self.sock.send((0).to_bytes(HEADER_SIZE, byteorder="big"))
+
+        # Close socket
+        self.sock.close()
 
 
-# Send segment function
-def send_segment(i):
-    # Send segment i to receiver with header i + 1 (1-indexed) in big endian
-    sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
+if __name__ == "__main__":
+    # Create sender object
+    sender = SR_Sender()
 
-    # Wait for ack
-    while True:
-        time.sleep(TIMEOUT / 1000)
+    # Run sender
+    sender.main()
 
-        if threads_events[i].is_set():
-            # Ack received for segment i
-            # Make the thread kill itself
-            return
+    # End time
+    end_time = time.time()
 
-        if VERBOSE:
-            print(f"Timeout for segment {i}, resending segment")
-
-        # Resend segment
-        sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
-
-
-# Main selective repeat loop
-while True:
-    # Send packet
-    if nextseqnum < send_base + N and nextseqnum < len(segments):
-        # Create thread
-        threads[nextseqnum] = threading.Thread(
-            target=send_segment, args=(nextseqnum,), daemon=True
-        )
-
-        # Create event
-        threads_events[nextseqnum] = threading.Event()
-
-        # Start thread
-        threads[nextseqnum].start()
-
-        if VERBOSE:
-            print(f"Sending segment {nextseqnum}")
-
-        # Increment nextseqnum
-        nextseqnum += 1
-
-    # Receive ack
-    try:
-        ack = int.from_bytes(sock.recv(HEADER_SIZE), byteorder="big")
-        ack = ack - 1  # 1-indexed
-        if VERBOSE:
-            print(f"Acknowledgement {ack}")
-
-        # Update send_base
-        if ack in range(send_base, send_base + N) and ack not in acks_received:
-            # Update acks_received
-            acks_received.add(ack)
-
-            # Set event for segment ack
-            threads_events[ack].set()
-
-            # Update send_base
-            while send_base in acks_received:
-                send_base += 1
-    except:
-        pass
-
-    # Check if all segments are sent and all acks are received
-    if len(acks_received) == len(segments):
-        break
-
-# Send termination signal
-sock.send((0).to_bytes(HEADER_SIZE, byteorder="big"))
-
-# Close socket
-sock.close()
-
-# End time
-end_time = time.time()
-
-# Print time
-print(f"Time: {end_time - start_time} seconds")
+    # Print time
+    print(f"Time: {end_time - start_time} seconds")
