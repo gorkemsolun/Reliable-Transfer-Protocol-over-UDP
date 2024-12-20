@@ -3,7 +3,7 @@
 import socket
 import sys
 import threading
-from time import time
+import time
 
 # Constants
 PACKET_SIZE = 1024  # 1 KB
@@ -23,7 +23,7 @@ TIMEOUT = int(sys.argv[4])  # in ms
 VERBOSE = int(sys.argv[5]) if len(sys.argv) > 5 else 0
 
 # Start time
-start_time = time()
+start_time = time.time()
 
 # Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -39,7 +39,6 @@ segments = [data[i : i + DATA_SIZE] for i in range(0, len(data), DATA_SIZE)]
 # Define variables
 send_base = 0  # Send base
 nextseqnum = 0  # Next sequence number
-kill = False  # Kill flag
 ack = -1  # Last ack received
 # Thread dictionary {segment_no:thread}
 threads = {}  # Thread dictionary {segment_no:thread}
@@ -53,35 +52,30 @@ def send_segment(i):
     # Send segment i to receiver with header i + 1 (1-indexed) in big endian
     sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
 
-    # Start timer
-    threads[i].timer = time()
-
     # Wait for ack
     while True:
-        # Check if timeout is reached for segment i (in ms)
-        if time() - threads[i].timer > TIMEOUT / 1000:
-            if threads_events[i].is_set():
-                # Ack received for segment i
-                # Make the thread kill itself
-                kill = True
-                return
+        time.sleep(TIMEOUT / 1000)
 
-            if VERBOSE:
-                print(f"Timeout for segment {i}, resending segment {i}")
+        if threads_events[i].is_set():
+            # Ack received for segment i
+            # Make the thread kill itself
+            return
 
-            # Resend segment
-            sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
+        if VERBOSE:
+            print(f"Timeout for segment {i}, resending segment")
 
-            # Restart timer
-            threads[i].timer = time()
+        # Resend segment
+        sock.send((i + 1).to_bytes(HEADER_SIZE, byteorder="big") + segments[i])
 
 
 # Main selective repeat loop
-while True and not kill:
+while True:
     # Send packet
     if nextseqnum < send_base + N and nextseqnum < len(segments):
         # Create thread
-        threads[nextseqnum] = threading.Thread(target=send_segment, args=(nextseqnum,))
+        threads[nextseqnum] = threading.Thread(
+            target=send_segment, args=(nextseqnum,), daemon=True
+        )
 
         # Create event
         threads_events[nextseqnum] = threading.Event()
@@ -110,8 +104,6 @@ while True and not kill:
             # Set event for segment ack
             threads_events[ack].set()
 
-            threads[ack].join()
-
             # Update send_base
             while send_base in acks_received:
                 send_base += 1
@@ -119,7 +111,7 @@ while True and not kill:
         pass
 
     # Check if all segments are sent and all acks are received
-    if send_base == len(segments) and len(acks_received) == len(segments):
+    if len(acks_received) == len(segments):
         break
 
 # Send termination signal
@@ -129,7 +121,7 @@ sock.send((0).to_bytes(HEADER_SIZE, byteorder="big"))
 sock.close()
 
 # End time
-end_time = time()
+end_time = time.time()
 
 # Print time
 print(f"Time: {end_time - start_time} seconds")
